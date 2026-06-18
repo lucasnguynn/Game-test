@@ -5,8 +5,14 @@
 <title>NOVA STRIKE</title>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --hud-cyan: #63f7ff;
+    --hud-warn: #ffcc4d;
+    --hud-danger: #ff5d7a;
+    --panel-bg: rgba(2, 14, 28, 0.72);
+  }
   body {
-    background: #000;
+    background: radial-gradient(circle at 50% 20%, #071426 0%, #01030a 55%, #000 100%);
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -17,40 +23,75 @@
   }
   canvas {
     display: block;
-    border: 1px solid #0ff2;
-    box-shadow: 0 0 60px #0ff4, 0 0 120px #00f3;
+    width: min(900px, 100vw);
+    height: auto;
+    max-height: calc(100vh - 96px);
+    border: 1px solid rgba(99, 247, 255, 0.28);
+    border-radius: 14px;
+    box-shadow: 0 0 42px rgba(0, 255, 255, 0.28), 0 0 96px rgba(0, 80, 255, 0.18);
+    background: #020612;
   }
   #ui {
     position: fixed;
-    top: 0; left: 0; right: 0;
-    display: flex;
-    justify-content: space-between;
-    padding: 12px 24px;
-    color: #0ff;
-    font-size: 15px;
-    text-shadow: 0 0 8px #0ff;
+    top: 12px; left: 50%;
+    transform: translateX(-50%);
+    width: min(900px, calc(100vw - 32px));
+    display: grid;
+    grid-template-columns: 1.25fr repeat(3, auto);
+    gap: 10px;
+    color: var(--hud-cyan);
+    font-size: clamp(12px, 1.8vw, 15px);
+    letter-spacing: 0.04em;
+    text-shadow: 0 0 8px rgba(99, 247, 255, 0.8);
     pointer-events: none;
     z-index: 10;
   }
+  #ui span {
+    min-height: 32px;
+    padding: 7px 12px;
+    border: 1px solid rgba(99, 247, 255, 0.22);
+    border-radius: 999px;
+    background: linear-gradient(180deg, rgba(7, 35, 61, 0.82), var(--panel-bg));
+    box-shadow: inset 0 0 18px rgba(99, 247, 255, 0.08), 0 6px 18px rgba(0, 0, 0, 0.28);
+    white-space: nowrap;
+  }
+  #brand-ui { font-weight: 700; }
+  #lives-ui { color: var(--hud-danger); text-shadow: 0 0 8px rgba(255, 93, 122, 0.85); }
   #controls {
     position: fixed;
-    bottom: 10px;
-    color: #ffffff55;
-    font-size: 12px;
+    bottom: 12px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: min(900px, calc(100vw - 32px));
+    color: rgba(235, 250, 255, 0.72);
+    font-size: clamp(11px, 1.6vw, 13px);
+    line-height: 1.45;
     text-align: center;
+    padding: 8px 12px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 10px;
+    background: rgba(0,0,0,0.42);
+    backdrop-filter: blur(6px);
+  }
+  @media (max-width: 640px) {
+    #ui { grid-template-columns: 1fr 1fr; top: 8px; }
+    #ui span { padding-inline: 9px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    canvas { box-shadow: 0 0 24px rgba(0, 255, 255, 0.18); }
   }
 </style>
 </head>
 <body>
 
-<div id="ui">
-  <span>⚡ NOVA STRIKE</span>
+<div id="ui" role="status" aria-live="polite">
+  <span id="brand-ui">⚡ NOVA STRIKE</span>
   <span id="score-ui">SCORE: 0</span>
   <span id="level-ui">WAVE: 1</span>
   <span id="lives-ui">❤ ❤ ❤</span>
 </div>
 
-<canvas id="c"></canvas>
+<canvas id="c" aria-label="NOVA STRIKE game area"></canvas>
 
 <div id="controls">
   🖱 MOVE MOUSE to steer &nbsp;|&nbsp; CLICK / SPACE to fire &nbsp;|&nbsp; P to pause
@@ -64,8 +105,28 @@
 const canvas  = document.getElementById('c');
 const ctx     = canvas.getContext('2d');
 
-const W = canvas.width  = 900;
-const H = canvas.height = 650;
+const W = 900;
+const H = 650;
+const DPR = Math.min(window.devicePixelRatio || 1, 2);
+canvas.width = Math.floor(W * DPR);
+canvas.height = Math.floor(H * DPR);
+canvas.style.width = `${W}px`;
+canvas.style.height = `${H}px`;
+ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
+ctx.imageSmoothingEnabled = false;
+
+const prefersReducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+const quality = {
+  bloom: !prefersReducedMotion,
+  maxParticles: prefersReducedMotion ? 140 : 260,
+  shadowScale: prefersReducedMotion ? 0.45 : 1,
+};
+
+const ui = {
+  score: document.getElementById('score-ui'),
+  wave: document.getElementById('level-ui'),
+  lives: document.getElementById('lives-ui'),
+};
 
 // ── State
 let score = 0, lives = 3, wave = 1, paused = false;
@@ -148,7 +209,9 @@ function drawStars() {
 const particles = [];
 
 function spawnParticles(x, y, count, config = {}) {
-  for (let i = 0; i < count; i++) {
+  const budget = Math.max(0, quality.maxParticles - particles.length);
+  const spawnCount = Math.min(count, budget);
+  for (let i = 0; i < spawnCount; i++) {
     const angle = Math.random() * Math.PI * 2;
     const speed = (config.minSpeed || 1) + Math.random() * (config.maxSpeed || 4);
     particles.push({
@@ -183,7 +246,7 @@ function drawParticles() {
   particles.forEach(p => {
     const a = Math.max(0, p.life);
     if (p.glow) {
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = 12 * quality.shadowScale;
       ctx.shadowColor = p.color;
     }
     if (p.trail) {
@@ -226,7 +289,7 @@ function drawPlayer() {
     const a = (i / player.trail.length) * 0.4;
     ctx.globalAlpha = a;
     ctx.fillStyle = '#0af';
-    ctx.shadowBlur = 10;
+    ctx.shadowBlur = 10 * quality.shadowScale;
     ctx.shadowColor = '#0af';
     ctx.beginPath();
     ctx.arc(t.x, t.y + 15, 5 * a, 0, Math.PI * 2);
@@ -247,7 +310,7 @@ function drawPlayer() {
   ctx.beginPath(); ctx.ellipse(x, y + 28, 16, 22, 0, 0, Math.PI * 2); ctx.fill();
 
   // Ship body
-  ctx.shadowBlur = 20;
+  ctx.shadowBlur = 20 * quality.shadowScale;
   ctx.shadowColor = '#0ff';
 
   ctx.fillStyle = '#0af';
@@ -313,7 +376,7 @@ function spawnBullet() {
 
 function drawBullets() {
   bullets.forEach(b => {
-    ctx.shadowBlur  = 15;
+    ctx.shadowBlur  = 15 * quality.shadowScale;
     ctx.shadowColor = '#0ff';
     const g = ctx.createLinearGradient(b.x, b.y + 12, b.x, b.y - 12);
     g.addColorStop(0, 'rgba(0,255,255,0)');
@@ -326,7 +389,7 @@ function drawBullets() {
   });
 
   enemyBullets.forEach(b => {
-    ctx.shadowBlur  = 12;
+    ctx.shadowBlur  = 12 * quality.shadowScale;
     ctx.shadowColor = '#f50';
     ctx.fillStyle   = '#f84';
     ctx.beginPath();
@@ -368,7 +431,7 @@ function drawEnemy(e) {
   ctx.translate(x, y);
   e.angle += 0.02;
 
-  ctx.shadowBlur = 20;
+  ctx.shadowBlur = 20 * quality.shadowScale;
   ctx.shadowColor = color;
 
   if (type === 'drone') {
@@ -483,7 +546,7 @@ function drawPowerUps() {
     ctx.translate(p.x, p.y);
     ctx.rotate(p.angle);
     const color = PU_COLORS[p.type];
-    ctx.shadowBlur = 20; ctx.shadowColor = color;
+    ctx.shadowBlur = 20 * quality.shadowScale; ctx.shadowColor = color;
     ctx.strokeStyle = color;
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(0, 0, 14, 0, Math.PI * 2); ctx.stroke();
@@ -513,7 +576,7 @@ function drawHUD() {
   hpG.addColorStop(0, '#f00');
   hpG.addColorStop(1, '#0f0');
   ctx.fillStyle = hpG;
-  ctx.shadowBlur = 8; ctx.shadowColor = '#0f0';
+  ctx.shadowBlur = 8 * quality.shadowScale; ctx.shadowColor = '#0f0';
   ctx.fillRect(bx, by, bw * (player.hp / player.maxHp), bh);
   ctx.shadowBlur = 0;
   ctx.strokeStyle = '#0f04';
@@ -526,7 +589,7 @@ function drawHUD() {
   // Power-up indicator
   if (player.powerUp) {
     const color = PU_COLORS[player.powerUp];
-    ctx.shadowBlur = 10; ctx.shadowColor = color;
+    ctx.shadowBlur = 10 * quality.shadowScale; ctx.shadowColor = color;
     ctx.fillStyle = color;
     ctx.font = '13px Courier New';
     ctx.textAlign = 'center';
@@ -535,10 +598,10 @@ function drawHUD() {
   }
 
   // Score / Wave UI (DOM)
-  document.getElementById('score-ui').textContent = `SCORE: ${score}`;
-  document.getElementById('level-ui').textContent = `WAVE: ${wave}`;
+  ui.score.textContent = `SCORE: ${score}`;
+  ui.wave.textContent = `WAVE: ${wave}`;
   const livesStr = '❤ '.repeat(lives).trim();
-  document.getElementById('lives-ui').textContent = livesStr || '☠';
+  ui.lives.textContent = livesStr || '☠';
 }
 
 // ─────────────────────────────────────────────
@@ -597,7 +660,7 @@ function drawGameOverScreen() {
 function drawPauseScreen() {
   ctx.fillStyle = '#000a';
   ctx.fillRect(0, 0, W, H);
-  ctx.shadowBlur = 20; ctx.shadowColor = '#0ff';
+  ctx.shadowBlur = 20 * quality.shadowScale; ctx.shadowColor = '#0ff';
   ctx.fillStyle = '#0ff';
   ctx.font = 'bold 44px Courier New';
   ctx.textAlign = 'center';
@@ -707,6 +770,10 @@ function applyPowerUp(type) {
 //  SCREEN EFFECTS
 // ─────────────────────────────────────────────
 function screenShake(amount, duration) {
+  if (prefersReducedMotion) {
+    amount *= 0.35;
+    duration = Math.min(duration, 6);
+  }
   shakeX = (Math.random() - 0.5) * amount;
   shakeY = (Math.random() - 0.5) * amount;
   shakeDuration = duration;
@@ -878,6 +945,29 @@ function update() {
 // ─────────────────────────────────────────────
 //  MAIN DRAW
 // ─────────────────────────────────────────────
+function drawBloomPass() {
+  if (!quality.bloom) return;
+  ctx.save();
+  ctx.globalCompositeOperation = 'lighter';
+  ctx.globalAlpha = 0.16;
+  ctx.filter = 'blur(7px) saturate(1.25)';
+  // Keep bloom pass side-effect free: omit enemies/power-ups because their draw calls animate rotation.
+  drawBullets();
+  drawPlayer();
+  ctx.filter = 'none';
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
+
+function drawVignetteAndToneMap() {
+  const v = ctx.createRadialGradient(W / 2, H / 2, H * 0.18, W / 2, H / 2, H * 0.72);
+  v.addColorStop(0, 'rgba(255,255,255,0.025)');
+  v.addColorStop(0.62, 'rgba(0,0,0,0)');
+  v.addColorStop(1, 'rgba(0,0,0,0.42)');
+  ctx.fillStyle = v;
+  ctx.fillRect(0, 0, W, H);
+}
+
 function draw() {
   // Background
   const bg = ctx.createLinearGradient(0, 0, 0, H);
@@ -893,6 +983,7 @@ function draw() {
   ctx.translate(shakeX, shakeY);
 
   drawStars();
+  drawBloomPass();
   drawParticles();
   drawPowerUps();
   drawBullets();
@@ -900,6 +991,7 @@ function draw() {
   drawPlayer();
   drawHUD();
 
+  drawVignetteAndToneMap();
   ctx.restore();
 
   // Flash overlay
